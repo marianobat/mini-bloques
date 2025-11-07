@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Esquivar Obstáculos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+    .app { display: grid; grid-template-columns: 560px 1fr; gap: 12px; height: 100%; }
+    header { grid-column: 1 / -1; padding: 10px 12px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center; }
+    #boardWrap { display:flex; align-items:center; justify-content:center; }
+    #board { border: 1px solid #ccc; background: #fff; }
+    #controls { display:flex; gap:8px; align-items:center; }
+    #status { min-height: 24px; font-weight: 600; }
+    #status.ok { color: #0a7a27; }
+    #status.err { color: #b00020; }
+    .sidebar { padding: 12px; border-left: 1px solid #eee; display:flex; flex-direction:column; gap:8px; }
+    #blocklyDiv { width: 100%; height: calc(100% - 40px); border: 1px solid #e6e6e6; border-radius: 10px; box-shadow: 0 2px 10px rgba(31,41,55,.08); }
+    button { padding: 10px 16px; border-radius: 10px; border: 1px solid #cbd5e1; background:#f8fafc; cursor:pointer; font-size:16px; }
+    button:hover { background:#eef2ff; }
+    #controls button { min-width: 48px; }
+    #btnPlay, #btnRestart, #btnClean { font-size:18px; padding:12px 18px; }
+    .blocklyToolboxDiv { border-right: 1px solid #e5e7eb; background: #ffffff !important; }
+    .blocklyFlyoutBackground { fill: #f8fafc !important; }
+    .blocklyTreeLabel { font-weight: 600; letter-spacing: .2px; }
+  </style>
+
+  <!-- Blockly estable por CDN -->
+  <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <img id="logoImg" src="./assets/logo.svg" alt="logo" style="height:28px;vertical-align:middle;margin-right:8px;">
+        <strong>Esquivar Obstáculos</strong> · Llevá a Cata al objetivo evitando los obstáculos.
+      </div>
+      <div id="controls">
+        <button id="btnPlay" title="Reproducir / Pausar">▶</button>
+        <button id="btnRestart" title="Reiniciar">↺</button>
+        <button id="btnClean" title="Limpiar">🧹</button>
+      </div>
+    </header>
+
+    <div class="sidebar">
+      <div id="status"></div>
+      <div id="blocklyDiv"></div>
+      <!-- Toolbox mínimo -->
+      <xml id="toolbox" style="display:none">
+        <category name="Movimiento" colour="#9966FF">
+          <block type="move_forward"></block>
+          <block type="turn_left"></block>
+          <block type="turn_right"></block>
+        </category>
+        <category name="Control" colour="#FFAB19">
+          <block type="repeat_times">
+            <value name="TIMES"><shadow type="math_number"><field name="NUM">3</field></shadow></value>
+          </block>
+        </category>
+        <category name="Números" colour="#59C059">
+          <block type="math_number"><field name="NUM">2</field></block>
+          <block type="math_number"><field name="NUM">3</field></block>
+          <block type="math_number"><field name="NUM">4</field></block>
+        </category>
+      </xml>
+    </div>
+
+    <div id="boardWrap">
+      <canvas id="board" width="520" height="520"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // ======= Theme (playful) + renderer zelos =======
+    const playfulTheme = Blockly.Theme.defineTheme('playful', {
+      base: Blockly.Themes.Classic,
+      componentStyles: {
+        workspaceBackgroundColour: '#fafbff',
+        toolboxBackgroundColour: '#ffffff',
+        toolboxForegroundColour: '#1f2937',
+        flyoutBackgroundColour: '#ffffff',
+        insertionMarkerColour: '#4C97FF',
+        insertionMarkerOpacity: 0.3,
+        scrollbarColour: '#c7d2fe'
+      }
+    });
+    // ======= Carga de imágenes (logo, robot, íconos de bloques) =======
+    const IMAGES = {
+      robot: new Image(),
+      icons: {
+        move: new Image(),
+        left: new Image(),
+        right: new Image(),
+        repeat: new Image()
+      }
+    };
+    IMAGES.robot.src = './assets/robot.svg';
+    IMAGES.icons.move.src = './assets/icons/move.svg';
+    IMAGES.icons.left.src = './assets/icons/left.svg';
+    IMAGES.icons.right.src = './assets/icons/right.svg';
+    IMAGES.icons.repeat.src = './assets/icons/repeat.svg';
+
+    // ======= 1) Definición de bloques mínimos =======
+    Blockly.Blocks['start_hat'] = {
+      init: function() {
+        this.appendDummyInput().appendField("   Play   ");
+        this.setNextStatement(true);
+        this.setColour("#4C97FF");
+        this.setDeletable(false);
+        this.setMovable(true);
+        this.setInputsInline(true);
+        this.setTooltip("Bloque de inicio de programa");
+        this.setPreviousStatement(false);
+      }
+    };
+    Blockly.Blocks['move_forward'] = {
+      init: function() {
+        this.appendDummyInput()
+          .appendField(new Blockly.FieldImage('./assets/icons/move.svg', 24, 24, '*'))
+          .appendField("avanzar");
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+        this.setColour("#9966FF");
+      }
+    };
+    Blockly.Blocks['turn_left'] = {
+      init: function() {
+        this.appendDummyInput()
+          .appendField(new Blockly.FieldImage('./assets/icons/left.svg', 24, 24, '*'))
+          .appendField("girar izquierda");
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+        this.setColour("#9966FF");
+      }
+    };
+    Blockly.Blocks['turn_right'] = {
+      init: function() {
+        this.appendDummyInput()
+          .appendField(new Blockly.FieldImage('./assets/icons/right.svg', 24, 24, '*'))
+          .appendField("girar derecha");
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+        this.setColour("#9966FF");
+      }
+    };
+    Blockly.Blocks['repeat_times'] = {
+      init: function() {
+        this.appendValueInput("TIMES").setCheck("Number")
+          .appendField(new Blockly.FieldImage('./assets/icons/repeat.svg', 24, 24, '*'))
+          .appendField("repetir");
+        this.appendDummyInput().appendField("veces");
+        this.appendStatementInput("DO").setCheck(null);
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+        this.setColour("#FFAB19");
+        this.setTooltip("Repite N veces las acciones dentro");
+      }
+    };
+
+    // ======= 2) Workspace =======
+    const workspace = Blockly.inject('blocklyDiv', {
+      toolbox: document.getElementById('toolbox'),
+      scrollbars: true,
+      trashcan: true,
+      zoom: { controls: true, wheel: true },
+      comments: false,
+      collapse: false,
+      media: 'https://unpkg.com/blockly/media/',
+      renderer: 'zelos',
+      theme: playfulTheme
+    });
+
+    function ensureStartHat() {
+      const hats = workspace.getTopBlocks(true).filter(b => b.type === 'start_hat');
+      if (hats.length === 0) {
+        const block = workspace.newBlock('start_hat');
+        block.initSvg(); block.render();
+        block.moveBy(20, 20);
+      }
+    }
+    ensureStartHat();
+
+    document.getElementById('btnClean').onclick = cleanWorkspace;
+
+    document.getElementById('btnRestart').onclick = restartRun;
+
+
+    // ======= 4) Intérprete simple =======
+    const GRID = 5;
+    const CELL = 100;
+    const PAD  = 10;
+    const GOAL = { x: 3, y: 2 };
+    const startState = { x: 0, y: 0, dir: 0 }; // 0=E,1=S,2=O,3=N
+
+    const OBSTACLES = [
+      {x: 1, y: 1},
+      {x: 2, y: 1},
+      {x: 1, y: 3}
+    ];
+    function isObstacle(x, y) {
+      return OBSTACLES.some(o => o.x === x && o.y === y);
+    }
+
+    function runProgram() {
+      setStatus('');
+      const top = workspace.getTopBlocks(true).find(b => b.type === 'start_hat');
+      if (!top) { setStatus('Falta el bloque Start', true); return; }
+
+      let robot = { ...startState };
+      const safetySteps = 200;
+      let steps = 0;
+
+      function execBlock(block) {
+        if (!block) return;
+        switch (block.type) {
+          case 'move_forward': move(robot); break;
+          case 'turn_left': robot.dir = (robot.dir + 3) % 4; break;
+          case 'turn_right': robot.dir = (robot.dir + 1) % 4; break;
+          case 'repeat_times': {
+            const timesBlock = block.getInputTargetBlock('TIMES');
+            const n = clampNumber(readNumber(timesBlock), 0, 50);
+            for (let i = 0; i < n; i++) {
+              const stmtFirst = block.getInputTargetBlock('DO');
+              execChain(stmtFirst);
+              steps += 1; if (steps > safetySteps) throw new Error('Demasiados pasos');
+            }
+            break;
+          }
+        }
+        steps += 1; if (steps > safetySteps) throw new Error('Demasiados pasos');
+      }
+      function execChain(first) {
+        let b = first;
+        while (b) { execBlock(b); b = b.getNextBlock(); }
+      }
+
+      try { execChain(top.getNextBlock()); }
+      catch (e) { setStatus('Error: ' + e.message, true); drawBoard(robot); return; }
+
+      if (robot.outOfBounds) {
+        drawBoard(robot);
+        setStatus('Cata fuera de límites!', true);
+        return;
+      }
+
+      const ok = (robot.x === GOAL.x && robot.y === GOAL.y);
+      drawBoard(robot);
+      setStatus(ok ? '¡Ganaste! ✅' : `No llegaste. Estás en (${robot.x},${robot.y})`, !ok);
+    }
+
+    function readNumber(block) {
+      if (!block) return 0;
+      if (block.type === 'math_number') {
+        const f = block.getField('NUM');
+        if (f) return Number(f.getValue());
+      }
+      return 0;
+    }
+    function clampNumber(n, min, max) { if (Number.isNaN(n)) return min; return Math.max(min, Math.min(max, n)); }
+
+    function move(robot) {
+      let nx = robot.x, ny = robot.y;
+      if (robot.dir === 0) nx += 1;
+      else if (robot.dir === 1) ny += 1;
+      else if (robot.dir === 2) nx -= 1;
+      else if (robot.dir === 3) ny -= 1;
+      if (nx >= 0 && nx < GRID && ny >= 0 && ny < GRID && !isObstacle(nx, ny)) {
+        robot.x = nx; robot.y = ny;
+      } else if (nx < 0 || nx >= GRID || ny < 0 || ny >= GRID) {
+        robot.outOfBounds = true;
+      }
+    }
+
+    // ======= 5) Dibujo =======
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+
+    function drawBoard(robot = startState) {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#fdfdfd'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle = '#ddd';
+      for (let i=0;i<=GRID;i++) {
+        ctx.beginPath(); ctx.moveTo(PAD + i*CELL, PAD); ctx.lineTo(PAD + i*CELL, PAD + GRID*CELL); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(PAD, PAD + i*CELL); ctx.lineTo(PAD + GRID*CELL, PAD + i*CELL); ctx.stroke();
+      }
+      for (const o of OBSTACLES) {
+        drawCell(o.x, o.y, '#e5e7eb');
+      }
+      drawCell(GOAL.x, GOAL.y, '#E8F7E8', true);
+      drawRobot(robot.x, robot.y, robot.dir, robot.outOfBounds || false);
+    }
+    function drawCell(x, y, fill='#eef', goal=false) {
+      const px = PAD + x*CELL, py = PAD + y*CELL;
+      ctx.fillStyle = fill; ctx.fillRect(px+2, py+2, CELL-4, CELL-4);
+      if (goal) { ctx.strokeStyle = '#2a8a2a'; ctx.lineWidth = 3; ctx.strokeRect(px+6, py+6, CELL-12, CELL-12); }
+    }
+    function drawRobot(x, y, dir, outOfBounds=false) {
+      const cx = PAD + x*CELL + CELL/2;
+      const cy = PAD + y*CELL + CELL/2;
+      const angle = [0, Math.PI/2, Math.PI, -Math.PI/2][dir] || 0;
+      const size = CELL * 0.6;
+      if (IMAGES.robot && IMAGES.robot.complete && IMAGES.robot.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.drawImage(IMAGES.robot, -size/2, -size/2, size, size);
+        // Draw out-of-bounds visual if needed
+        if (outOfBounds) {
+          ctx.strokeStyle = '#e23';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(0, 0, size*0.55, 0, Math.PI*2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        const r = CELL*0.28;
+        ctx.fillStyle = outOfBounds ? '#e23' : '#4C97FF';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+        const nx = cx + Math.cos(angle) * (r+10);
+        const ny = cy + Math.sin(angle) * (r+10);
+        ctx.strokeStyle = '#003A99'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny); ctx.stroke();
+      }
+    }
+    function setStatus(msg, error=false) {
+      const el = document.getElementById('status');
+      el.textContent = msg; el.className = error ? 'err' : (msg ? 'ok' : '');
+    }
+    drawBoard();
+
+    // ======= 6) Control de ejecución automático =======
+    let running = false;
+    let intervalId = null;
+    let compiled = [];
+    let runIdx = 0;
+    let robot = { ...startState, outOfBounds: false };
+
+    function compileProgram() {
+      compiled = [];
+      const top = workspace.getTopBlocks(true).find(b => b.type === 'start_hat');
+      if (!top) return;
+      function compileBlock(block) {
+        if (!block) return;
+        switch (block.type) {
+          case 'move_forward': compiled.push({ cmd: 'move', id: block.id }); break;
+          case 'turn_left':    compiled.push({ cmd: 'left', id: block.id }); break;
+          case 'turn_right':   compiled.push({ cmd: 'right', id: block.id }); break;
+          case 'repeat_times': {
+            const timesBlock = block.getInputTargetBlock('TIMES');
+            const n = clampNumber(readNumber(timesBlock), 0, 50);
+            const stmtFirst = block.getInputTargetBlock('DO');
+            for (let i = 0; i < n; i++) {
+              compileChain(stmtFirst);
+            }
+            break;
+          }
+        }
+      }
+      function compileChain(block) {
+        let b = block;
+        while (b) { compileBlock(b); b = b.getNextBlock(); }
+      }
+      compileChain(top.getNextBlock());
+    }
+
+    function stepOnce() {
+      if (runIdx >= compiled.length) { toggleAuto(); return; }
+      const step = compiled[runIdx];
+      runIdx++;
+      try { workspace.highlightBlock(step.id); } catch(e) {}
+      switch (step.cmd) {
+        case 'move':  move(robot); break;
+        case 'left':  robot.dir = (robot.dir + 3) % 4; break;
+        case 'right': robot.dir = (robot.dir + 1) % 4; break;
+      }
+      drawBoard(robot);
+      if (robot.outOfBounds) {
+        setStatus('Cata fuera de límites!', true);
+        toggleAuto();
+        return;
+      }
+      if (robot.x === GOAL.x && robot.y === GOAL.y) {
+        setStatus('¡Ganaste! ✅');
+        toggleAuto();
+        return;
+      }
+    }
+
+    function toggleAuto() {
+      if (running) {
+        running = false;
+        clearInterval(intervalId);
+        intervalId = null;
+        clearHighlight();
+        document.getElementById('btnPlay').textContent = '▶';
+      } else {
+        compileProgram();
+        runIdx = 0;
+        robot = { ...startState, outOfBounds: false };
+        clearHighlight();
+        setStatus('');
+        drawBoard(robot);
+        running = true;
+        intervalId = setInterval(() => {
+          stepOnce();
+        }, 400);
+        document.getElementById('btnPlay').textContent = '⏸';
+      }
+    }
+
+    function clearHighlight() {
+      try { workspace.highlightBlock(null); } catch(e) {}
+    }
+
+    document.getElementById('btnPlay').onclick = toggleAuto;
+
+    function restartRun() {
+      if (running) toggleAuto();
+      runIdx = 0;
+      robot = { ...startState, outOfBounds: false };
+      clearHighlight();
+      setStatus('');
+      drawBoard(robot);
+    }
+
+    function cleanWorkspace() {
+      if (running) { toggleAuto(); }
+      workspace.clear();
+      // volver a colocar el bloque de inicio
+      const block = workspace.newBlock('start_hat');
+      block.initSvg(); block.render();
+      block.moveBy(20, 20);
+      compiled = [];
+      runIdx = 0;
+      robot = { ...startState, outOfBounds: false };
+      clearHighlight();
+      setStatus('');
+      drawBoard(robot);
+    }
+
+    // === Cómo usar imágenes en el escenario ===
+    // 1) Crea un objeto Image(): const img = new Image(); img.src = './assets/robot.png';
+    // 2) Espera a que cargue: img.onload = () => { ctx.drawImage(img, x, y, w, h); };
+    // 3) Para fondos, dibuja la imagen antes de la grilla. Para sprites, calcula (px, py) como en drawRobot.
+    // 4) Para múltiples imágenes, precárgalas y guárdalas en un diccionario por nombre.
+  </script>
+</body>
+</html>
