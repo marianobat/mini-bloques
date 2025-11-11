@@ -111,7 +111,7 @@
   <div id="winBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
     <div class="modal">
       <h3>¡Ganaste! 🎉</h3>
-      <p>Encendiste todas las letras de <strong>STEAM</strong>.</p>
+      <p>Tus estudiantes también pueden aprender con <strong>SmartTEAM</strong>.</p>
       <div class="actions">
         <a href="https://smartteamdigital.com/" target="_blank" rel="noopener noreferrer">Conocer más</a>
         <button id="btnCerrarModal">Cerrar</button>
@@ -120,10 +120,11 @@
   </div>
 
   <script>
-    // ======= Íconos inline (garantiza que se vean) =======
-    const ICON_MOVE  = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2l5 5h-3v10h-4V7H7z"/></svg>`);
-    const ICON_LEFT  = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="currentColor" d="M14 7l-5 5l5 5V7z"/></svg>`);
-    const ICON_RIGHT = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="currentColor" d="M10 7l5 5l-5 5V7z"/></svg>`);
+    // ======= Assets externos =======
+    const ICON_MOVE_URL  = './assets/icons/move.svg';
+    const ICON_LEFT_URL  = './assets/icons/left.svg';
+    const ICON_RIGHT_URL = './assets/icons/right.svg';
+    const ROBOT_URL      = './assets/robot.svg'; // opcional
 
     // ======= Tema + renderer =======
     const playfulTheme = Blockly.Theme.defineTheme('playful', {
@@ -139,7 +140,7 @@
       }
     });
 
-    // ======= Bloques mínimos =======
+    // ======= Bloques mínimos (siempre muestran imagen externa) =======
     Blockly.Blocks['start_hat'] = {
       init: function() {
         this.appendDummyInput().appendField("Play");
@@ -154,24 +155,24 @@
     Blockly.Blocks['move_forward'] = {
       init: function() {
         this.appendDummyInput()
-          .appendField(new Blockly.FieldImage(ICON_MOVE, 24, 24, '*', () => null))
-          .appendField("avanzar");
+          .appendField(new Blockly.FieldImage(ICON_MOVE_URL, 24, 24, '*'))
+          .appendField("avanza");
         this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
     Blockly.Blocks['turn_left'] = {
       init: function() {
         this.appendDummyInput()
-          .appendField(new Blockly.FieldImage(ICON_LEFT, 24, 24, '*', () => null))
-          .appendField("girar izquierda");
+          .appendField(new Blockly.FieldImage(ICON_LEFT_URL, 24, 24, '*'))
+          .appendField("izquierda");
         this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
     Blockly.Blocks['turn_right'] = {
       init: function() {
         this.appendDummyInput()
-          .appendField(new Blockly.FieldImage(ICON_RIGHT, 24, 24, '*', () => null))
-          .appendField("girar derecha");
+          .appendField(new Blockly.FieldImage(ICON_RIGHT_URL, 24, 24, '*'))
+          .appendField("derecha");
         this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
@@ -260,6 +261,10 @@
 
     let gameWon = false;
 
+    // Carga opcional del robot SVG externo (si existe)
+    const robotImg = new Image();
+    robotImg.src = ROBOT_URL;
+
     function drawBoard(robot = startState) {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle = '#fdfdfd'; ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -276,7 +281,7 @@
       // Letras
       LETTERS.forEach(L => drawLetterCell(L));
 
-      // Robot (no dibujar si el juego fue ganado)
+      // Robot (no dibujar si ganó)
       if (!gameWon) {
         drawRobot(robot.x, robot.y, robot.dir, robot.outOfBounds || false);
       }
@@ -303,15 +308,28 @@
       const cx = PAD + x*CELL + CELL/2;
       const cy = PAD + y*CELL + CELL/2;
       const angle = [0, Math.PI/2, Math.PI, -Math.PI/2][dir] || 0;
-      const r = CELL*0.28;
+      const size = CELL * 0.6;
 
-      // círculo + “nariz” direccional
-      ctx.fillStyle = outOfBounds ? '#e23' : '#4C97FF';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
-      const nx = cx + Math.cos(angle) * (r+10);
-      const ny = cy + Math.sin(angle) * (r+10);
-      ctx.strokeStyle = '#003A99'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny); ctx.stroke();
+      if (robotImg.complete && robotImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.drawImage(robotImg, -size/2, -size/2, size, size);
+        if (outOfBounds) {
+          ctx.strokeStyle = '#e23'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(0, 0, size*0.55, 0, Math.PI*2); ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        // Fallback simple si no hay SVG
+        const r = CELL*0.28;
+        ctx.fillStyle = outOfBounds ? '#e23' : '#4C97FF';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+        const nx = cx + Math.cos(angle) * (r+10);
+        const ny = cy + Math.sin(angle) * (r+10);
+        ctx.strokeStyle = '#003A99'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny); ctx.stroke();
+      }
     }
 
     function setStatus(msg, error=false) {
