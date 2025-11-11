@@ -2,56 +2,100 @@
 <html lang="es">
 <head>
   <meta charset="utf-8"/>
-  <title>STEAM Pathfinder</title>
+  <title>STEAM Pathfinder (embed)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <style>
-    html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
-    .app { display: grid; grid-template-columns: 560px 1fr; gap: 12px; height: 100%; }
-    header { grid-column: 1 / -1; padding: 10px 12px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center; }
-    #boardWrap { display:flex; align-items:center; justify-content:center; }
-    #board { border: 1px solid #ccc; background: #fff; }
-    #controls { display:flex; gap:8px; align-items:center; }
-    #status { min-height: 24px; font-weight: 600; }
-    #status.ok { color: #0a7a27; }
-    #status.err { color: #b00020; }
-    .sidebar { padding: 12px; border-left: 1px solid #eee; display:flex; flex-direction:column; gap:8px; }
-    #blocklyDiv { width: 100%; height: calc(100% - 40px); border: 1px solid #e6e6e6; border-radius: 10px; box-shadow: 0 2px 10px rgba(31,41,55,.08); }
-    button { padding: 10px 16px; border-radius: 10px; border: 1px solid #cbd5e1; background:#f8fafc; cursor:pointer; font-size:16px; }
+    :root{
+      --frame-w: 380px;       /* ancho máximo del frame embebible */
+      --cell: 64px;           /* tamaño de celda más chico */
+      --pad: 8px;             /* padding del canvas */
+    }
+    html, body { height: 100%; margin: 0; }
+    body { font-family: system-ui, sans-serif; background: #fff; -webkit-font-smoothing: antialiased; }
+    /* Evitar selección de texto al arrastrar bloques */
+    * { -webkit-user-select:none; user-select:none; }
+
+    .wrap {
+      display: grid;
+      grid-template-columns: minmax(320px, var(--frame-w)) 1fr;
+      gap: 10px;
+      padding: 8px;
+      box-sizing: border-box;
+      max-height: 100vh;
+    }
+
+    /* FRAME ANGOSTO (canvas + controles) */
+    .frame {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(31,41,55,.08);
+      background:#fff;
+      overflow: hidden;
+      display:flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .controls {
+      display:flex; gap:6px; padding:8px;
+      border-bottom: 1px solid #f1f5f9;
+      align-items:center; justify-content:center;
+    }
+    button {
+      padding:8px 12px; border-radius:10px; border:1px solid #cbd5e1;
+      background:#f8fafc; cursor:pointer; font-size:16px; line-height:1;
+    }
     button:hover { background:#eef2ff; }
-    #controls button { min-width: 48px; }
-    #btnPlay, #btnRestart, #btnClean { font-size:18px; padding:12px 18px; }
+    #status { padding:8px 10px; font-weight:600; text-align:center; min-height:24px; }
+    #status.ok { color:#0a7a27; }
+    #status.err { color:#b00020; }
+
+    .boardArea { display:flex; align-items:center; justify-content:center; padding:8px; }
+    #board { border:1px solid #e5e7eb; background:#fff; border-radius:8px; }
+
+    /* Blockly a la derecha (visible) */
+    .side {
+      display:flex; flex-direction:column; gap:8px; min-width:300px;
+    }
+    #blocklyDiv {
+      width: 100%;
+      height: 420px;                  /* más compacto */
+      border: 1px solid #e6e6e6; border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(31,41,55,.08);
+    }
     .blocklyToolboxDiv { border-right: 1px solid #e5e7eb; background: #ffffff !important; }
     .blocklyFlyoutBackground { fill: #f8fafc !important; }
+
+    /* Responsive: si el ancho es chico, apilar */
+    @media (max-width: 900px){
+      .wrap{ grid-template-columns: 1fr; }
+      .side { min-width: unset; }
+    }
   </style>
   <script src="https://unpkg.com/blockly/blockly.min.js"></script>
 </head>
 <body>
-  <div class="app">
-    <header>
-      <div>
-        <img id="logoImg" src="./assets/logo.svg" alt="logo" style="height:28px;vertical-align:middle;margin-right:8px;">
-        <strong>STEAM Pathfinder</strong> · Encendé las letras STEAM pasando por encima con el robot.
-      </div>
-      <div id="controls">
+  <div class="wrap">
+    <!-- FRAME ANGOSTO EMBEBIBLE -->
+    <div class="frame">
+      <div class="controls">
         <button id="btnPlay" title="Reproducir / Pausar">▶</button>
         <button id="btnRestart" title="Reiniciar">↺</button>
         <button id="btnClean" title="Limpiar">🧹</button>
       </div>
-    </header>
-
-    <div class="sidebar">
       <div id="status"></div>
+      <div class="boardArea">
+        <canvas id="board"></canvas>
+      </div>
+    </div>
+
+    <!-- Blockly visible con SOLO bloques de movimiento -->
+    <div class="side">
       <div id="blocklyDiv"></div>
-      <!-- Toolbox sin categorías: solo bloques de movimiento visibles -->
       <xml id="toolbox" style="display:none">
         <block type="move_forward"></block>
         <block type="turn_left"></block>
         <block type="turn_right"></block>
       </xml>
-    </div>
-
-    <div id="boardWrap">
-      <canvas id="board"></canvas>
     </div>
   </div>
 
@@ -70,15 +114,8 @@
       }
     });
 
-    // ======= Imágenes =======
-    const IMAGES = {
-      robot: new Image(),
-      icons: {
-        move: new Image(),
-        left: new Image(),
-        right: new Image()
-      }
-    };
+    // ======= Assets opcionales (si no existen, se dibuja fallback) =======
+    const IMAGES = { robot: new Image(), icons:{ move:new Image(), left:new Image(), right:new Image() } };
     IMAGES.robot.src = './assets/robot.svg';
     IMAGES.icons.move.src = './assets/icons/move.svg';
     IMAGES.icons.left.src = './assets/icons/left.svg';
@@ -87,44 +124,40 @@
     // ======= Bloques mínimos =======
     Blockly.Blocks['start_hat'] = {
       init: function() {
-        this.appendDummyInput().appendField("   Play   ");
+        this.appendDummyInput().appendField("Play");
         this.setNextStatement(true);
         this.setColour("#4C97FF");
         this.setDeletable(false);
         this.setMovable(true);
         this.setInputsInline(true);
-        this.setTooltip("Bloque de inicio de programa");
         this.setPreviousStatement(false);
       }
     };
     Blockly.Blocks['move_forward'] = {
       init: function() {
-        this.appendDummyInput()
-          .appendField(new Blockly.FieldImage('./assets/icons/move.svg', 24, 24, '*'))
-          .appendField("avanzar");
-        this.setPreviousStatement(true);
-        this.setNextStatement(true);
-        this.setColour("#9966FF");
+        const exists = IMAGES.icons.move.complete && IMAGES.icons.move.naturalWidth>0;
+        const input = this.appendDummyInput();
+        if (exists) input.appendField(new Blockly.FieldImage('./assets/icons/move.svg', 24, 24, '*'));
+        input.appendField("avanzar");
+        this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
     Blockly.Blocks['turn_left'] = {
       init: function() {
-        this.appendDummyInput()
-          .appendField(new Blockly.FieldImage('./assets/icons/left.svg', 24, 24, '*'))
-          .appendField("girar izquierda");
-        this.setPreviousStatement(true);
-        this.setNextStatement(true);
-        this.setColour("#9966FF");
+        const exists = IMAGES.icons.left.complete && IMAGES.icons.left.naturalWidth>0;
+        const input = this.appendDummyInput();
+        if (exists) input.appendField(new Blockly.FieldImage('./assets/icons/left.svg', 24, 24, '*'));
+        input.appendField("girar izquierda");
+        this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
     Blockly.Blocks['turn_right'] = {
       init: function() {
-        this.appendDummyInput()
-          .appendField(new Blockly.FieldImage('./assets/icons/right.svg', 24, 24, '*'))
-          .appendField("girar derecha");
-        this.setPreviousStatement(true);
-        this.setNextStatement(true);
-        this.setColour("#9966FF");
+        const exists = IMAGES.icons.right.complete && IMAGES.icons.right.naturalWidth>0;
+        const input = this.appendDummyInput();
+        if (exists) input.appendField(new Blockly.FieldImage('./assets/icons/right.svg', 24, 24, '*'));
+        input.appendField("girar derecha");
+        this.setPreviousStatement(true); this.setNextStatement(true); this.setColour("#9966FF");
       }
     };
 
@@ -151,40 +184,44 @@
     }
     ensureStartHat();
 
-    document.getElementById('btnClean').onclick = cleanWorkspace;
-    document.getElementById('btnRestart').onclick = restartRun;
-
-    // ======= Escenario 3x5 con STEAM en línea =======
+    // ======= Parámetros del escenario (3x5) =======
     const GRID_W = 5;   // columnas
     const GRID_H = 3;   // filas
-    const CELL   = 100;
-    const PAD    = 10;
+    const CELL = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell')) || 64;
+    const PAD  = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--pad')) || 8;
 
-    const startState = { x: 0, y: 1, dir: 0 }; // medio de la fila central, mirando al Este
+    // Robot arranca en (0,0)
+    const startState = { x: 0, y: 0, dir: 0 }; // 0=Este,1=Sur,2=Oeste,3=Norte
 
     // Letras STEAM en la fila central (y = 1)
     const LETTERS = [
-      { ch: 'S', x: 0, y: 1, lit: false },
-      { ch: 'T', x: 1, y: 1, lit: false },
-      { ch: 'E', x: 2, y: 1, lit: false },
-      { ch: 'A', x: 3, y: 1, lit: false },
-      { ch: 'M', x: 4, y: 1, lit: false },
+      { ch: 'S', x: 0, y: 1, lit: false, color: null },
+      { ch: 'T', x: 1, y: 1, lit: false, color: null },
+      { ch: 'E', x: 2, y: 1, lit: false, color: null },
+      { ch: 'A', x: 3, y: 1, lit: false, color: null },
+      { ch: 'M', x: 4, y: 1, lit: false, color: null },
     ];
 
-    function isLetterAt(x, y) {
-      return LETTERS.findIndex(L => L.x === x && L.y === y);
-    }
+    // Colores por letra (fácil de cambiar luego)
+    const LETTER_COLORS = {
+      S: '#c7e0ff',  // azul claro
+      T: '#ffd6a5',  // durazno
+      E: '#c8f7c5',  // verde claro
+      A: '#ffe3e3',  // rosado claro
+      M: '#e7d5ff'   // violeta claro
+    };
+
     function lightIfLetter(x, y) {
       const idx = LETTERS.findIndex(L => L.x === x && L.y === y);
-      if (idx >= 0) LETTERS[idx].lit = true;
+      if (idx >= 0) {
+        LETTERS[idx].lit = true;
+        const ch = LETTERS[idx].ch;
+        LETTERS[idx].color = LETTER_COLORS[ch] || '#c7e0ff';
+      }
     }
-    function allLit() {
-      return LETTERS.every(L => L.lit);
-    }
+    function allLit() { return LETTERS.every(L => L.lit); }
 
-    // ======= Intérprete simple =======
-    function clampNumber(n, min, max) { if (Number.isNaN(n)) return min; return Math.max(min, Math.min(max, n)); }
-
+    // ======= Movimiento del robot =======
     function move(robot) {
       let nx = robot.x, ny = robot.y;
       if (robot.dir === 0) nx += 1;
@@ -203,7 +240,6 @@
     // ======= Dibujo =======
     const canvas = document.getElementById('board');
     const ctx = canvas.getContext('2d');
-    // Ajuste dinámico del canvas a 3x5
     canvas.width  = PAD*2 + CELL*GRID_W;
     canvas.height = PAD*2 + CELL*GRID_H;
 
@@ -212,7 +248,7 @@
       ctx.fillStyle = '#fdfdfd'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
       // Grilla
-      ctx.strokeStyle = '#ddd';
+      ctx.strokeStyle = '#e5e7eb';
       for (let i=0;i<=GRID_W;i++) {
         ctx.beginPath(); ctx.moveTo(PAD + i*CELL, PAD); ctx.lineTo(PAD + i*CELL, PAD + GRID_H*CELL); ctx.stroke();
       }
@@ -229,19 +265,19 @@
 
     function drawLetterCell(L) {
       const px = PAD + L.x*CELL, py = PAD + L.y*CELL;
-      // color apagado vs encendido
-      ctx.fillStyle = L.lit ? '#c7e0ff' : '#fff3bf';
+      const litColor = L.color || '#fff7cc'; // apagado
+      ctx.fillStyle = L.lit ? litColor : '#fff7cc';
       ctx.fillRect(px+2, py+2, CELL-4, CELL-4);
-      // letra
+
       ctx.fillStyle = '#1f2937';
-      ctx.font = 'bold 48px system-ui';
+      ctx.font = 'bold 32px system-ui';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(L.ch, px + CELL/2, py + CELL/2);
-      // marco sutil
-      ctx.strokeStyle = L.lit ? '#2563eb' : '#eab308';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(px+6, py+6, CELL-12, CELL-12);
+
+      ctx.strokeStyle = L.lit ? '#334155' : '#eab308';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px+5, py+5, CELL-10, CELL-10);
     }
 
     function drawRobot(x, y, dir, outOfBounds=false) {
@@ -255,11 +291,8 @@
         ctx.rotate(angle);
         ctx.drawImage(IMAGES.robot, -size/2, -size/2, size, size);
         if (outOfBounds) {
-          ctx.strokeStyle = '#e23';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.arc(0, 0, size*0.55, 0, Math.PI*2);
-          ctx.stroke();
+          ctx.strokeStyle = '#e23'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(0, 0, size*0.55, 0, Math.PI*2); ctx.stroke();
         }
         ctx.restore();
       } else {
@@ -268,7 +301,7 @@
         ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
         const nx = cx + Math.cos(angle) * (r+10);
         const ny = cy + Math.sin(angle) * (r+10);
-        ctx.strokeStyle = '#003A99'; ctx.lineWidth = 4;
+        ctx.strokeStyle = '#003A99'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny); ctx.stroke();
       }
     }
@@ -280,7 +313,7 @@
 
     drawBoard();
 
-    // ======= Ejecución paso a paso =======
+    // ======= Ejecución =======
     let running = false;
     let intervalId = null;
     let compiled = [];
@@ -309,8 +342,7 @@
 
     function stepOnce() {
       if (runIdx >= compiled.length) { toggleAuto(); return; }
-      const step = compiled[runIdx];
-      runIdx++;
+      const step = compiled[runIdx++];
       try { workspace.highlightBlock(step.id); } catch(e) {}
 
       switch (step.cmd) {
@@ -327,7 +359,7 @@
         return;
       }
       if (allLit()) {
-        setStatus('¡Ganaste! Todas las letras STEAM encendidas ✅');
+        setStatus('¡Ganaste! STEAM encendidas ✅');
         toggleAuto();
         return;
       }
@@ -335,42 +367,33 @@
 
     function toggleAuto() {
       if (running) {
-        running = false;
-        clearInterval(intervalId);
-        intervalId = null;
-        clearHighlight();
+        running = false; clearInterval(intervalId); intervalId = null;
+        try { workspace.highlightBlock(null); } catch(e){}
         document.getElementById('btnPlay').textContent = '▶';
       } else {
-        // reset de letras y robot
-        LETTERS.forEach(L => L.lit = false);
-        // encender si empieza parado sobre una letra
+        // reset
+        LETTERS.forEach(L => { L.lit = false; L.color = null; });
         lightIfLetter(startState.x, startState.y);
 
         compileProgram();
         runIdx = 0;
         robot = { ...startState, outOfBounds: false };
-        clearHighlight();
+        try { workspace.highlightBlock(null); } catch(e){}
         setStatus('');
         drawBoard(robot);
         running = true;
-        intervalId = setInterval(stepOnce, 400);
+        intervalId = setInterval(stepOnce, 380);
         document.getElementById('btnPlay').textContent = '⏸';
       }
     }
 
-    function clearHighlight() {
-      try { workspace.highlightBlock(null); } catch(e) {}
-    }
-
-    document.getElementById('btnPlay').onclick = toggleAuto;
-
     function restartRun() {
       if (running) toggleAuto();
-      LETTERS.forEach(L => L.lit = false);
+      LETTERS.forEach(L => { L.lit = false; L.color = null; });
       lightIfLetter(startState.x, startState.y);
       runIdx = 0;
       robot = { ...startState, outOfBounds: false };
-      clearHighlight();
+      try { workspace.highlightBlock(null); } catch(e){}
       setStatus('');
       drawBoard(robot);
     }
@@ -381,15 +404,18 @@
       const block = workspace.newBlock('start_hat');
       block.initSvg(); block.render();
       block.moveBy(20, 20);
-      LETTERS.forEach(L => L.lit = false);
+      LETTERS.forEach(L => { L.lit = false; L.color = null; });
       lightIfLetter(startState.x, startState.y);
-      compiled = [];
-      runIdx = 0;
+      compiled = []; runIdx = 0;
       robot = { ...startState, outOfBounds: false };
-      clearHighlight();
+      try { workspace.highlightBlock(null); } catch(e){}
       setStatus('');
       drawBoard(robot);
     }
+
+    document.getElementById('btnPlay').onclick = toggleAuto;
+    document.getElementById('btnRestart').onclick = restartRun;
+    document.getElementById('btnClean').onclick = cleanWorkspace;
   </script>
 </body>
 </html>
