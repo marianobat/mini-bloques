@@ -264,6 +264,8 @@
     // Carga opcional del robot SVG externo (si existe)
     const robotImg = new Image();
     robotImg.src = ROBOT_URL;
+    robotImg.onload  = () => drawBoard();
+    robotImg.onerror = () => drawBoard();
 
     function drawBoard(robot = startState) {
       ctx.clearRect(0,0,canvas.width,canvas.height);
