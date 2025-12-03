@@ -17,31 +17,36 @@
     .wrap {
       display: grid;
       grid-template-columns: minmax(320px, var(--frame-w)) 1fr;
-      gap: 10px; padding: 8px; box-sizing: border-box; max-height: 100vh;
+      gap: 12px; padding: 10px; box-sizing: border-box; max-height: 100vh;
+      background: radial-gradient(circle at 20% 20%, #f1f5ff 0, transparent 28%), radial-gradient(circle at 80% 10%, #fff4e6 0, transparent 30%);
     }
 
     /* FRAME angosto (canvas + controles) */
     .frame {
-      border: 1px solid #e5e7eb; border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(31,41,55,.08);
+      border: 1px solid #e5e7eb; border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(31,41,55,.12);
       background:#fff; overflow: hidden;
       display:flex; flex-direction: column; align-items: stretch;
     }
     .controls {
-      display:flex; gap:6px; padding:8px;
+      display:flex; gap:10px; padding:10px 12px;
       border-bottom: 1px solid #f1f5f9; align-items:center; justify-content:center;
+      background: linear-gradient(120deg, #eef2ff, #f8fafc);
     }
     button {
-      padding:8px 12px; border-radius:10px; border:1px solid #cbd5e1;
-      background:#f8fafc; cursor:pointer; font-size:16px; line-height:1;
+      padding:10px 14px; border-radius:12px; border:1px solid #cbd5e1;
+      background:#fff; cursor:pointer; font-size:16px; line-height:1;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+      box-shadow: 0 6px 16px rgba(59,130,246,0.08);
     }
-    button:hover { background:#eef2ff; }
-    #status { padding:8px 10px; font-weight:600; text-align:center; min-height:24px; }
+    button:hover { background:#eef2ff; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    #status { padding:8px 10px; font-weight:600; text-align:center; min-height:24px; color:#0ea5e9; }
     #status.ok { color:#0a7a27; }
     #status.err { color:#b00020; }
 
     .boardArea { display:flex; align-items:center; justify-content:center; padding:8px; }
-    #board { border:1px solid #e5e7eb; background:#fff; border-radius:8px; }
+    #board { border:1px solid #e5e7eb; background:#fff; border-radius:10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
 
     /* Blockly a la derecha (visible) */
     .side { display:flex; flex-direction:column; gap:8px; min-width:300px; }
@@ -55,13 +60,19 @@
 
     /* Modal de victoria */
     .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,.5);
-      display: none; align-items: center; justify-content: center; z-index: 50;
+      position: fixed; inset: 0; background: rgba(15,23,42,.55);
+      display: flex; align-items: center; justify-content: center; z-index: 50;
+      opacity: 0; pointer-events: none;
+      transition: opacity 200ms ease;
     }
     .modal {
-      background: #fff; border-radius: 14px; padding: 20px;
+      background: linear-gradient(160deg, #ffffff, #f8fafc);
+      border-radius: 16px; padding: 20px;
       width: min(92vw, 380px); box-shadow: 0 20px 50px rgba(0,0,0,.25);
       text-align: center;
+      transform: translateY(10px) scale(0.98);
+      transition: transform 220ms ease, opacity 220ms ease;
+      opacity: 0;
     }
     .modal h3 { margin: 0 0 6px; font-size: 20px; }
     .modal p { margin: 0 0 14px; color:#334155; }
@@ -72,7 +83,8 @@
     }
     .modal a { background:#111827; color:#fff; }
     .modal button { background:#f8fafc; }
-    .modal-backdrop.show { display:flex; }
+    .modal-backdrop.show { opacity: 1; pointer-events: auto; }
+    .modal-backdrop.show .modal { transform: translateY(0) scale(1); opacity: 1; }
 
     @media (max-width: 900px){
       .wrap{ grid-template-columns: 1fr; }
@@ -238,19 +250,11 @@
     function allLit() { return LETTERS.every(L => L.lit); }
 
     // ======= Movimiento del robot =======
-    function move(robot) {
-      let nx = robot.x, ny = robot.y;
-      if (robot.dir === 0) nx += 1;
-      else if (robot.dir === 1) ny += 1;
-      else if (robot.dir === 2) nx -= 1;
-      else if (robot.dir === 3) ny -= 1;
-
-      if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
-        robot.x = nx; robot.y = ny;
-        lightIfLetter(robot.x, robot.y);
-      } else {
-        robot.outOfBounds = true;
-      }
+    function nextPosition(x, y, dir) {
+      if (dir === 0) return { x: x + 1, y };
+      if (dir === 1) return { x, y: y + 1 };
+      if (dir === 2) return { x: x - 1, y };
+      return { x, y: y - 1 };
     }
 
     // ======= Dibujo =======
@@ -267,7 +271,7 @@
     robotImg.onload  = () => drawBoard();
     robotImg.onerror = () => drawBoard();
 
-    function drawBoard(robot = startState) {
+    function drawBoard(robot = startState, animationHint = null) {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle = '#fdfdfd'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
@@ -286,6 +290,15 @@
       // Robot (no dibujar si ganó)
       if (!gameWon) {
         drawRobot(robot.x, robot.y, robot.dir, robot.outOfBounds || false);
+      }
+
+      // Si hay animación de choque, resaltamos la celda con un destello
+      if (animationHint?.type === 'bump') {
+        const { x, y } = animationHint.from;
+        const px = PAD + x*CELL, py = PAD + y*CELL;
+        ctx.strokeStyle = 'rgba(220,38,38,0.8)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(px+4, py+4, CELL-8, CELL-8);
       }
     }
 
@@ -309,7 +322,7 @@
     function drawRobot(x, y, dir, outOfBounds=false) {
       const cx = PAD + x*CELL + CELL/2;
       const cy = PAD + y*CELL + CELL/2;
-      const angle = [0, Math.PI/2, Math.PI, -Math.PI/2][dir] || 0;
+      const angle = (dir || 0) * (Math.PI / 2); // soporta rotaciones fraccionarias
       const size = CELL * 0.6;
 
       if (robotImg.complete && robotImg.naturalWidth > 0) {
@@ -343,16 +356,23 @@
     const backdrop = document.getElementById('winBackdrop');
     const btnCerrarModal = document.getElementById('btnCerrarModal');
     btnCerrarModal.addEventListener('click', () => backdrop.classList.remove('show'));
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.classList.remove('show'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') backdrop.classList.remove('show'); });
     function showWinModal() { backdrop.classList.add('show'); }
 
     drawBoard();
+    setStatus('Arma tu programa y presiona ▶');
 
-    // ======= Ejecución =======
+    // ======= Ejecución con animaciones suaves =======
+    const STEP_DURATION = 520;
+    const TURN_DURATION = 380;
+
     let running = false;
-    let intervalId = null;
+    let rafId = null;
     let compiled = [];
     let runIdx = 0;
     let robot = { ...startState, outOfBounds: false };
+    let animation = { active: false };
 
     function compileProgram() {
       compiled = [];
@@ -374,84 +394,183 @@
       compileChain(top.getNextBlock());
     }
 
-    function stepOnce() {
-      if (runIdx >= compiled.length) { toggleAuto(); return; }
-      const step = compiled[runIdx++];
+    const ease = t => 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+    function startStep(step, timestamp) {
       try { workspace.highlightBlock(step.id); } catch(e) {}
+      const from = { ...robot };
+      const base = { active: true, start: timestamp, step, from };
 
-      switch (step.cmd) {
-        case 'move':  move(robot); break;
-        case 'left':  robot.dir = (robot.dir + 3) % 4; break;
-        case 'right': robot.dir = (robot.dir + 1) % 4; break;
-      }
-
-      // ¿Ganó?
-      if (allLit()) {
-        gameWon = true;             // ocultar robot
-        drawBoard(robot);           // redibujar sin robot
-        setStatus('¡Ganaste! STEAM encendidas ✅');
-        toggleAuto();               // detener ejecución
-        showWinModal();             // mostrar pop-up
+      if (step.cmd === 'move') {
+        const next = nextPosition(robot.x, robot.y, robot.dir);
+        const inBounds = next.x >= 0 && next.x < GRID_W && next.y >= 0 && next.y < GRID_H;
+        if (inBounds) {
+          animation = { ...base, type: 'move', to: { ...next, dir: robot.dir }, duration: STEP_DURATION };
+        } else {
+          // pequeña sacudida indicando choque
+          const dx = next.x - robot.x;
+          const dy = next.y - robot.y;
+          animation = {
+            ...base,
+            type: 'bump',
+            to: { x: robot.x + dx * 0.15, y: robot.y + dy * 0.15, dir: robot.dir },
+            duration: 280
+          };
+        }
         return;
       }
 
-      drawBoard(robot);
+      if (step.cmd === 'left' || step.cmd === 'right') {
+        const dirDelta = step.cmd === 'left' ? -1 : 1;
+        const toDir = (robot.dir + 4 + dirDelta) % 4;
+        animation = { ...base, type: 'turn', to: { ...robot, dir: toDir }, duration: TURN_DURATION };
+        return;
+      }
+    }
+
+    function finalizeStep(step) {
+      if (animation.type === 'move') {
+        const target = nextPosition(animation.from.x, animation.from.y, animation.from.dir);
+        robot.x = target.x; robot.y = target.y;
+        lightIfLetter(robot.x, robot.y);
+      } else if (animation.type === 'turn') {
+        robot.dir = animation.to.dir;
+      } else if (animation.type === 'bump') {
+        robot.outOfBounds = true;
+        setStatus('¡Fuera de límites!', true);
+        running = false;
+        document.getElementById('btnPlay').textContent = '▶';
+        try { workspace.highlightBlock(null); } catch(e){}
+      }
+
+      animation = { active: false };
 
       if (robot.outOfBounds) {
-        setStatus('¡Fuera de límites!', true);
-        toggleAuto();
+        try { workspace.highlightBlock(null); } catch(e){}
+        document.getElementById('btnPlay').textContent = '▶';
+        drawBoard(robot);
         return;
       }
+
+      if (allLit()) {
+        gameWon = true;
+        drawBoard(robot);
+        setStatus('¡Ganaste! STEAM encendidas ✅');
+        running = false;
+        try { workspace.highlightBlock(null); } catch(e){}
+        document.getElementById('btnPlay').textContent = '▶';
+        showWinModal();
+        return;
+      }
+
+      // Preparar siguiente paso o detener si no hay más
+      if (runIdx >= compiled.length) {
+        running = false;
+        try { workspace.highlightBlock(null); } catch(e){}
+        document.getElementById('btnPlay').textContent = '▶';
+      }
+    }
+
+    function animate(timestamp) {
+      if (!running) { rafId = null; return; }
+
+      if (!animation.active) {
+        if (runIdx >= compiled.length) {
+          running = false;
+          document.getElementById('btnPlay').textContent = '▶';
+          setStatus('Programa finalizado');
+          try { workspace.highlightBlock(null); } catch(e){}
+          drawBoard(robot);
+          rafId = null;
+          return;
+        }
+        startStep(compiled[runIdx++], timestamp || performance.now());
+      }
+
+      const { start, duration, from, to, type } = animation;
+      const t = Math.min(1, (timestamp - start) / duration);
+      const p = ease(t);
+
+      let current = { ...robot };
+      if (type === 'move' || type === 'bump') {
+        current.x = from.x + (to.x - from.x) * p;
+        current.y = from.y + (to.y - from.y) * p;
+        current.dir = from.dir;
+      } else if (type === 'turn') {
+        const startAngle = from.dir;
+        let delta = (to.dir - from.dir + 4) % 4;
+        if (delta === 3) delta = -1; // giro antihorario suave
+        current.dir = startAngle + delta * p;
+      }
+
+      drawBoard(current, animation);
+
+      if (t >= 1) {
+        finalizeStep(animation.step);
+        drawBoard(robot);
+      }
+
+      rafId = requestAnimationFrame(animate);
     }
 
     function toggleAuto() {
       if (running) {
-        running = false; clearInterval(intervalId); intervalId = null;
+        running = false;
+        animation = { active: false };
+        if (rafId) cancelAnimationFrame(rafId);
         try { workspace.highlightBlock(null); } catch(e){}
         document.getElementById('btnPlay').textContent = '▶';
-      } else {
-        // reset
-        LETTERS.forEach(L => { L.lit = false; L.color = null; });
-        gameWon = false;
-        lightIfLetter(startState.x, startState.y);
-
-        compileProgram();
-        runIdx = 0;
-        robot = { ...startState, outOfBounds: false };
-        try { workspace.highlightBlock(null); } catch(e){}
-        setStatus('');
-        drawBoard(robot);
-        running = true;
-        intervalId = setInterval(stepOnce, 380);
-        document.getElementById('btnPlay').textContent = '⏸';
+        setStatus('Pausado');
+        return;
       }
+
+      // reset
+      LETTERS.forEach(L => { L.lit = false; L.color = null; });
+      gameWon = false;
+      lightIfLetter(startState.x, startState.y);
+
+      compileProgram();
+      if (compiled.length === 0) {
+        setStatus('Agrega bloques de movimiento debajo de "Programa"');
+        return;
+      }
+      runIdx = 0;
+      robot = { ...startState, outOfBounds: false };
+      animation = { active: false };
+      try { workspace.highlightBlock(null); } catch(e){}
+      setStatus('Ejecución en curso...');
+      drawBoard(robot);
+
+      running = true;
+      document.getElementById('btnPlay').textContent = '⏸';
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(animate);
     }
 
     function restartRun() {
-      if (running) toggleAuto();
+      running = false;
+      animation = { active: false };
+      if (rafId) cancelAnimationFrame(rafId);
       LETTERS.forEach(L => { L.lit = false; L.color = null; });
       gameWon = false;
       lightIfLetter(startState.x, startState.y);
       runIdx = 0;
       robot = { ...startState, outOfBounds: false };
       try { workspace.highlightBlock(null); } catch(e){}
-      setStatus('');
+      setStatus('Tablero reiniciado');
       drawBoard(robot);
+      document.getElementById('btnPlay').textContent = '▶';
     }
 
     function cleanWorkspace() {
-      if (running) toggleAuto();
+      restartRun();
       workspace.clear();
       const block = workspace.newBlock('start_hat');
       block.initSvg(); block.render();
       block.moveBy(20, 20);
-      LETTERS.forEach(L => { L.lit = false; L.color = null; });
-      gameWon = false;
-      lightIfLetter(startState.x, startState.y);
       compiled = []; runIdx = 0;
       robot = { ...startState, outOfBounds: false };
-      try { workspace.highlightBlock(null); } catch(e){}
-      setStatus('');
+      setStatus('Programa limpio');
       drawBoard(robot);
     }
 
